@@ -1,0 +1,383 @@
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+
+// server.ts
+var import_express = __toESM(require("express"), 1);
+var import_path = __toESM(require("path"), 1);
+var import_fs = __toESM(require("fs"), 1);
+var import_vite = require("vite");
+var import_dotenv = __toESM(require("dotenv"), 1);
+import_dotenv.default.config();
+var app = (0, import_express.default)();
+var PORT = 3e3;
+app.use(import_express.default.json());
+app.use((req, res, next) => {
+  const allowedOrigin = process.env.APP_URL || "*";
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+function getOpenAIConfig() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY environment variable is required");
+  }
+  return {
+    apiKey,
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    url: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1/chat/completions"
+  };
+}
+async function openAIChat(messages, stream = false) {
+  const config = getOpenAIConfig();
+  const response = await fetch(config.url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ model: config.model, messages, temperature: 0.2, stream })
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`OpenAI API ${response.status}: ${detail.slice(0, 300)}`);
+  }
+  return response;
+}
+app.post("/api/ai/tafsir", async (req, res) => {
+  try {
+    const { surahNumber, surahName, ayahNumber } = req.body;
+    if (!surahNumber) {
+      return res.status(400).json({ error: "surahNumber is required" });
+    }
+    let prompt = "";
+    if (ayahNumber) {
+      prompt = `\u0623\u0646\u062A \u0639\u0627\u0644\u0645 \u0645\u0641\u0633\u0631 \u0644\u0644\u0642\u0631\u0622\u0646 \u0627\u0644\u0643\u0631\u064A\u0645. \u064A\u0631\u062C\u0649 \u062A\u0642\u062F\u064A\u0645 \u062A\u0641\u0633\u064A\u0631 \u0645\u064A\u0633\u0631 \u0648\u062F\u0642\u064A\u0642 \u0648\u0645\u0648\u062B\u0648\u0642 (\u0645\u0633\u062A\u0646\u062F\u0627\u064B \u0625\u0644\u0649 \u062A\u0641\u0633\u064A\u0631 \u0627\u0628\u0646 \u0643\u062B\u064A\u0631 \u0648\u0627\u0644\u0633\u0639\u062F\u064A \u0648\u0627\u0644\u0637\u0628\u0631\u064A) \u0644\u0644\u0622\u064A\u0629 \u0631\u0642\u0645 ${ayahNumber} \u0645\u0646 \u0633\u0648\u0631\u0629 ${surahName || surahNumber}. 
+\u0623\u0638\u0647\u0631 \u0623\u0648\u0644\u0627\u064B \u0646\u0635 \u0627\u0644\u0622\u064A\u0629 \u0627\u0644\u0643\u0631\u064A\u0645\u0629 \u0628\u062E\u0637 \u0642\u0631\u0622\u0646\u064A \u0648\u0627\u0636\u062D\u060C \u062B\u0645 \u0627\u0630\u0643\u0631 \u0633\u0628\u0628 \u0627\u0644\u0646\u0632\u0648\u0644 \u0625\u0646 \u0648\u062C\u062F\u060C \u062B\u0645 \u0627\u0644\u062A\u0641\u0633\u064A\u0631 \u0627\u0644\u0645\u0641\u0635\u0644\u060C \u0648\u0627\u0644\u0641\u0648\u0627\u0626\u062F \u0648\u0627\u0644\u0639\u0628\u0631 \u0627\u0644\u0645\u0633\u062A\u062E\u0644\u0635\u0629 \u0645\u0646 \u0627\u0644\u0622\u064A\u0629. 
+\u0627\u0643\u062A\u0628 \u0628\u0644\u063A\u0629 \u0639\u0631\u0628\u064A\u0629 \u0641\u0635\u064A\u062D\u0629 \u0628\u0644\u064A\u063A\u0629 \u0648\u0627\u0633\u062A\u062E\u062F\u0645 \u062A\u0646\u0633\u064A\u0642 Markdown \u0628\u0634\u0643\u0644 \u062C\u0645\u064A\u0644 \u0648\u0645\u0646\u0638\u0645 \u062C\u062F\u0627\u064B \u0645\u0639 \u0641\u0642\u0631\u0627\u062A \u0648\u0627\u0636\u062D\u0629 \u0648\u0639\u0646\u0627\u0648\u064A\u0646 \u0628\u0627\u0631\u0632\u0629.`;
+    } else {
+      prompt = `\u0623\u0646\u062A \u0639\u0627\u0644\u0645 \u0645\u0641\u0633\u0631 \u0644\u0644\u0642\u0631\u0622\u0646 \u0627\u0644\u0643\u0631\u064A\u0645. \u064A\u0631\u062C\u0649 \u062A\u0642\u062F\u064A\u0645 \u062A\u0641\u0633\u064A\u0631 \u0634\u0627\u0645\u0644 \u0648\u062A\u0639\u0631\u064A\u0641 \u0645\u062A\u0643\u0627\u0645\u0644 \u0644\u0633\u0648\u0631\u0629 ${surahName || surahNumber} (\u0627\u0644\u0633\u0648\u0631\u0629 \u0631\u0642\u0645 ${surahNumber}).
+\u0648\u0636\u062D \u0627\u0644\u0622\u062A\u064A:
+1. \u0645\u0642\u0627\u0635\u062F \u0627\u0644\u0633\u0648\u0631\u0629 \u0648\u0645\u0648\u0627\u0636\u064A\u0639\u0647\u0627 \u0627\u0644\u0631\u0626\u064A\u0633\u064A\u0629.
+2. \u0623\u0633\u0628\u0627\u0628 \u0646\u0632\u0648\u0644 \u0627\u0644\u0633\u0648\u0631\u0629 \u0623\u0648 \u0622\u064A\u0627\u062A \u0645\u0634\u0647\u0648\u0631\u0629 \u0645\u0646\u0647\u0627 \u0625\u0646 \u0648\u062C\u062F.
+3. \u0641\u0636\u0644 \u0627\u0644\u0633\u0648\u0631\u0629 \u0627\u0644\u0643\u0631\u064A\u0645\u0629 \u0645\u0646 \u0627\u0644\u0623\u062D\u0627\u062F\u064A\u062B \u0627\u0644\u0635\u062D\u064A\u062D\u0629.
+4. \u062E\u0644\u0627\u0635\u0629 \u0639\u0627\u0645\u0629 \u0623\u0648 \u062A\u0641\u0633\u064A\u0631 \u0625\u062C\u0645\u0627\u0644\u064A \u0644\u0622\u064A\u0627\u062A\u0647\u0627.
+\u0627\u0643\u062A\u0628 \u0628\u0644\u063A\u0629 \u0639\u0631\u0628\u064A\u0629 \u0641\u0635\u064A\u062D\u0629 \u0628\u0644\u064A\u063A\u0629 \u0648\u0627\u0633\u062A\u062E\u062F\u0645 \u062A\u0646\u0633\u064A\u0642 Markdown \u0628\u0637\u0631\u064A\u0642\u0629 \u0627\u062D\u062A\u0631\u0627\u0641\u064A\u0629 \u0648\u062C\u0645\u064A\u0644\u0629 \u0648\u0645\u0631\u064A\u062D\u0629 \u062C\u062F\u0627\u064B \u0644\u0644\u0642\u0631\u0627\u0621\u0629 \u0648\u0628\u0623\u0633\u0644\u0648\u0628 \u0645\u0646\u0638\u0645 \u064A\u0633\u0647\u0644 \u0639\u0644\u0649 \u0627\u0644\u0645\u0624\u0645\u0646 \u0641\u0647\u0645 \u0643\u0644\u0627\u0645 \u0631\u0628\u0647.`;
+    }
+    const response = await openAIChat([
+      { role: "system", content: "\u0623\u0646\u062A \u0645\u0641\u0633\u0631 \u0646\u0627\u0642\u0644 \u0623\u0645\u064A\u0646. \u0644\u0627 \u062A\u062E\u062A\u0631\u0639 \u0646\u0635 \u0627\u0644\u0622\u064A\u0629 \u0623\u0648 \u0633\u0628\u0628 \u0627\u0644\u0646\u0632\u0648\u0644. \u0627\u0630\u0643\u0631 \u0645\u0635\u062F\u0631 \u0643\u0644 \u0646\u0642\u0644\u060C \u0648\u0635\u0631\u0651\u062D \u0628\u0639\u062F\u0645 \u0627\u0644\u062A\u062D\u0642\u0642 \u0639\u0646\u062F \u0627\u0644\u0634\u0643." },
+      { role: "user", content: prompt }
+    ]);
+    const data = await response.json();
+    res.json({ text: data.choices?.[0]?.message?.content || "\u062A\u0639\u0630\u0631 \u0627\u0644\u062D\u0635\u0648\u0644 \u0639\u0644\u0649 \u062A\u0641\u0633\u064A\u0631 \u0645\u0646 \u0627\u0644\u062E\u0627\u062F\u0645." });
+  } catch (error) {
+    console.error("Tafsir API Error:", error);
+    res.status(500).json({ error: error.message || "\u062D\u062F\u062B \u062E\u0637\u0623 \u0623\u062B\u0646\u0627\u0621 \u0645\u0639\u0627\u0644\u062C\u0629 \u0637\u0644\u0628 \u0627\u0644\u062A\u0641\u0633\u064A\u0631" });
+  }
+});
+app.post("/api/ai/qa/stream", async (req, res) => {
+  try {
+    const { question } = req.body;
+    if (!question) {
+      return res.status(400).json({ error: "question is required" });
+    }
+    const systemInstruction = `\u0623\u0646\u062A \u0645\u0633\u0627\u0639\u062F \u0628\u062D\u062B \u0625\u0633\u0644\u0627\u0645\u064A \u0627\u0633\u0645\u0647 "\u0645\u0633\u062A\u0634\u0627\u0631 \u0646\u0648\u0631 \u0627\u0644\u0625\u0633\u0644\u0627\u0645" \u0648\u0644\u0633\u062A \u0645\u0641\u062A\u064A\u0627\u064B \u0645\u0633\u062A\u0642\u0644\u0627\u064B.
+\u0623\u062C\u0628 \u0641\u0642\u0637 \u0628\u0645\u0627 \u062A\u0633\u062A\u0637\u064A\u0639 \u0646\u0633\u0628\u062A\u0647 \u0628\u0623\u0645\u0627\u0646 \u0625\u0644\u0649 \u0645\u0635\u0627\u062F\u0631 \u0645\u062D\u062F\u062F\u0629: \u0627\u0644\u0642\u0631\u0622\u0646 \u0627\u0644\u0643\u0631\u064A\u0645\u060C \u0635\u062D\u064A\u062D \u0627\u0644\u0628\u062E\u0627\u0631\u064A\u060C \u0635\u062D\u064A\u062D \u0645\u0633\u0644\u0645\u060C \u0648\u0643\u062A\u0628 \u0627\u0644\u0639\u0644\u0645\u0627\u0621 \u0627\u0644\u0645\u0639\u0631\u0648\u0641\u0629. \u0644\u0627 \u062A\u062E\u062A\u0631\u0639 \u0622\u064A\u0629 \u0623\u0648 \u062D\u062F\u064A\u062B\u0627\u064B \u0623\u0648 \u0631\u0642\u0645\u0627\u064B \u0623\u0648 \u0642\u0648\u0644\u0627\u064B\u060C \u0648\u0644\u0627 \u062A\u0646\u0633\u0628 \u0646\u0635\u0627\u064B \u0644\u0645\u0635\u062F\u0631 \u0644\u0645 \u062A\u062A\u062D\u0642\u0642 \u0645\u0646\u0647. \u0625\u0630\u0627 \u0644\u0645 \u062A\u0643\u0646 \u0645\u062A\u0623\u0643\u062F\u0627\u064B \u0641\u0642\u0644 \u0628\u0648\u0636\u0648\u062D: "\u0644\u0627 \u0623\u0633\u062A\u0637\u064A\u0639 \u0627\u0644\u062A\u062D\u0642\u0642 \u0645\u0646 \u0647\u0630\u0647 \u0627\u0644\u0646\u0633\u0628\u0629 \u0627\u0644\u0622\u0646" \u0648\u0644\u0627 \u062A\u0645\u0644\u0623 \u0627\u0644\u0641\u0631\u0627\u063A \u0628\u062A\u062E\u0645\u064A\u0646.
+\u0627\u062C\u0639\u0644 \u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0623\u062F\u0627\u0629 \u0644\u062A\u0631\u062A\u064A\u0628 \u0648\u0634\u0631\u062D \u0627\u0644\u0645\u0627\u062F\u0629 \u0627\u0644\u0645\u0648\u062B\u0642\u0629 \u0641\u0642\u0637\u060C \u0648\u0644\u064A\u0633 \u0645\u0635\u062F\u0631\u0627\u064B \u0634\u0631\u0639\u064A\u0627\u064B.
+\u0641\u064A \u0643\u0644 \u0625\u062C\u0627\u0628\u0629 \u062F\u064A\u0646\u064A\u0629: \u0627\u0630\u0643\u0631 \u0627\u0644\u062F\u0644\u064A\u0644 \u0623\u0648 \u0627\u0644\u0645\u0635\u062F\u0631 \u0641\u064A \u0642\u0633\u0645 \u0645\u0633\u062A\u0642\u0644 \u0628\u0639\u0646\u0648\u0627\u0646 "\u0627\u0644\u0645\u0635\u0627\u062F\u0631"\u060C \u0645\u0639 \u0627\u0633\u0645 \u0627\u0644\u0643\u062A\u0627\u0628 \u0648\u0631\u0642\u0645 \u0627\u0644\u062D\u062F\u064A\u062B \u0623\u0648 \u0627\u0644\u0633\u0648\u0631\u0629 \u0648\u0627\u0644\u0622\u064A\u0629 \u0645\u062A\u0649 \u0623\u0645\u0643\u0646\u060C \u0648\u0645\u064A\u0651\u0632 \u0628\u064A\u0646 \u0627\u0644\u0646\u0635 \u0627\u0644\u0645\u0646\u0642\u0648\u0644 \u0648\u0627\u0644\u0634\u0631\u062D.
+\u0641\u064A \u0645\u0633\u0627\u0626\u0644 \u0627\u0644\u0637\u0644\u0627\u0642 \u0648\u0627\u0644\u0645\u0648\u0627\u0631\u064A\u062B \u0648\u0627\u0644\u062A\u0643\u0641\u064A\u0631 \u0648\u0627\u0644\u062F\u0645\u0627\u0621 \u0648\u0627\u0644\u0639\u0642\u0648\u062F \u0648\u0627\u0644\u0645\u0639\u0627\u0645\u0644\u0627\u062A \u0627\u0644\u0645\u0639\u0642\u062F\u0629 \u0648\u0627\u0644\u0641\u062A\u0627\u0648\u0649 \u0627\u0644\u062E\u0627\u0635\u0629 \u0628\u0627\u0644\u0623\u0634\u062E\u0627\u0635: \u0644\u0627 \u062A\u0639\u0637 \u062D\u0643\u0645\u0627\u064B \u0642\u0637\u0639\u064A\u0627\u064B\u061B \u0627\u0630\u0643\u0631 \u0627\u0644\u0642\u0627\u0639\u062F\u0629 \u0627\u0644\u0639\u0627\u0645\u0629 \u0625\u0646 \u0643\u0627\u0646\u062A \u0645\u0648\u062B\u0642\u0629\u060C \u062B\u0645 \u0648\u062C\u0651\u0647 \u0627\u0644\u0633\u0627\u0626\u0644 \u0625\u0644\u0649 \u0639\u0627\u0644\u0645 \u0645\u0648\u062B\u0648\u0642 \u0623\u0648 \u062C\u0647\u0629 \u0625\u0641\u062A\u0627\u0621 \u0631\u0633\u0645\u064A\u0629 \u0645\u0639 \u0627\u0644\u062A\u0646\u0628\u064A\u0647 \u0623\u0646 \u0627\u0644\u062A\u0641\u0627\u0635\u064A\u0644 \u062A\u063A\u064A\u0651\u0631 \u0627\u0644\u062D\u0643\u0645.
+\u0627\u0643\u062A\u0628 \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0627\u0644\u0641\u0635\u064A\u062D\u0629 \u0648\u0628\u0647\u062F\u0648\u0621 \u0648\u0627\u062E\u062A\u0635\u0627\u0631\u060C \u0648\u0644\u0627 \u062A\u0628\u062F\u0623 \u0628\u0625\u062C\u0627\u0628\u0629 \u0637\u0648\u064A\u0644\u0629 \u0645\u0646\u0645\u0642\u0629 \u0628\u0644\u0627 \u062F\u0644\u064A\u0644\u060C \u0648\u0644\u0627 \u062A\u0633\u062A\u062E\u062F\u0645 \u0639\u0628\u0627\u0631\u0627\u062A \u062A\u0648\u062D\u064A \u0628\u0623\u0646\u0643 \u0634\u064A\u062E \u0623\u0648 \u062C\u0647\u0629 \u0625\u0641\u062A\u0627\u0621.`;
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    const responseStream = await openAIChat([
+      { role: "system", content: systemInstruction },
+      { role: "user", content: question }
+    ], true);
+    if (!responseStream.body) throw new Error("OpenAI returned no response body");
+    const reader = responseStream.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        const data = line.trim().replace(/^data:\s*/, "");
+        if (!data || data === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(data);
+          const text = parsed.choices?.[0]?.delta?.content;
+          if (text) res.write(`data: ${JSON.stringify({ text })}
+
+`);
+        } catch {
+        }
+      }
+    }
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (error) {
+    console.error("Streaming Q&A Error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message || "\u062D\u062F\u062B \u062E\u0637\u0623 \u0623\u062B\u0646\u0627\u0621 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0645\u0633\u062A\u0634\u0627\u0631 \u0646\u0648\u0631 \u0627\u0644\u0625\u0633\u0644\u0627\u0645" });
+    } else {
+      res.write(`data: ${JSON.stringify({ error: error.message })}
+
+`);
+      res.end();
+    }
+  }
+});
+app.post("/api/ai/qa", async (req, res) => {
+  try {
+    const { question } = req.body;
+    if (!question) {
+      return res.status(400).json({ error: "question is required" });
+    }
+    const systemInstruction = `\u0623\u0646\u062A \u0645\u0633\u0627\u0639\u062F \u0628\u062D\u062B \u0625\u0633\u0644\u0627\u0645\u064A \u0627\u0633\u0645\u0647 "\u0645\u0633\u062A\u0634\u0627\u0631 \u0646\u0648\u0631 \u0627\u0644\u0625\u0633\u0644\u0627\u0645". \u0623\u062C\u0628 \u0645\u0646 \u0627\u0644\u0642\u0631\u0622\u0646 \u0627\u0644\u0643\u0631\u064A\u0645 \u0648\u0635\u062D\u064A\u062D \u0627\u0644\u0628\u062E\u0627\u0631\u064A \u0648\u0635\u062D\u064A\u062D \u0645\u0633\u0644\u0645 \u0648\u0627\u0644\u0645\u0635\u0627\u062F\u0631 \u0627\u0644\u0639\u0644\u0645\u064A\u0629 \u0627\u0644\u0645\u0639\u0631\u0648\u0641\u0629 \u0641\u0642\u0637\u060C \u0648\u0644\u0627 \u062A\u062E\u062A\u0631\u0639 \u0646\u0635\u0648\u0635\u0627\u064B \u0623\u0648 \u0623\u0631\u0642\u0627\u0645\u0627\u064B. \u064A\u062C\u0628 \u0623\u0646 \u062A\u062E\u062A\u0645 \u0643\u0644 \u0625\u062C\u0627\u0628\u0629 \u0628\u0642\u0633\u0645 "\u0627\u0644\u0645\u0635\u0627\u062F\u0631" \u064A\u0630\u0643\u0631 \u0627\u0644\u0645\u0631\u062C\u0639 \u0648\u0631\u0642\u0645 \u0627\u0644\u062D\u062F\u064A\u062B \u0623\u0648 \u0627\u0644\u0633\u0648\u0631\u0629 \u0648\u0627\u0644\u0622\u064A\u0629 \u0645\u062A\u0649 \u0623\u0645\u0643\u0646. \u0625\u0630\u0627 \u0644\u0645 \u062A\u062A\u0623\u0643\u062F \u0641\u0635\u0631\u0651\u062D \u0628\u0639\u062F\u0645 \u0627\u0644\u0642\u062F\u0631\u0629 \u0639\u0644\u0649 \u0627\u0644\u062A\u062D\u0642\u0642. \u0644\u0627 \u062A\u0639\u0637 \u0641\u062A\u0648\u0649 \u0642\u0637\u0639\u064A\u0629 \u0641\u064A \u0627\u0644\u0637\u0644\u0627\u0642 \u0648\u0627\u0644\u0645\u0648\u0627\u0631\u064A\u062B \u0648\u0627\u0644\u062A\u0643\u0641\u064A\u0631 \u0648\u0627\u0644\u062F\u0645\u0627\u0621 \u0648\u0627\u0644\u0645\u0639\u0627\u0645\u0644\u0627\u062A \u0627\u0644\u0645\u0639\u0642\u062F\u0629\u060C \u0628\u0644 \u0648\u062C\u0651\u0647 \u0625\u0644\u0649 \u0639\u0627\u0644\u0645 \u0623\u0648 \u062C\u0647\u0629 \u0625\u0641\u062A\u0627\u0621 \u0631\u0633\u0645\u064A\u0629.`;
+    const response = await openAIChat([
+      { role: "system", content: systemInstruction },
+      { role: "user", content: question }
+    ]);
+    const data = await response.json();
+    res.json({ text: data.choices?.[0]?.message?.content || "\u062A\u0639\u0630\u0631 \u0627\u0644\u062D\u0635\u0648\u0644 \u0639\u0644\u0649 \u0625\u062C\u0627\u0628\u0629 \u0645\u0646 \u0627\u0644\u062E\u0627\u062F\u0645." });
+  } catch (error) {
+    console.error("Islamic Q&A API Error:", error);
+    res.status(500).json({ error: error.message || "\u062D\u062F\u062B \u062E\u0637\u0623 \u0623\u062B\u0646\u0627\u0621 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0645\u0633\u062A\u0634\u0627\u0631 \u0646\u0648\u0631 \u0627\u0644\u0625\u0633\u0644\u0627\u0645" });
+  }
+});
+app.get("/privacy-policy", (req, res) => {
+  const html = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>\u0633\u064A\u0627\u0633\u0629 \u0627\u0644\u062E\u0635\u0648\u0635\u064A\u0629 | \u062A\u0637\u0628\u064A\u0642 \u0646\u0648\u0631 \u0627\u0644\u0625\u0633\u0644\u0627\u0645</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #064e3b;
+      --accent: #d97706;
+      --bg: #070d0e;
+      --card-bg: #0c181a;
+      --border: #1a3338;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.8;
+      padding: 24px 16px;
+    }
+    .container {
+      max-width: 780px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 32px 24px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    }
+    @media (min-width: 640px) {
+      .container { padding: 48px 40px; }
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 900;
+      color: #fcd34d;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .section {
+      margin-bottom: 24px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 16px;
+      padding: 20px;
+    }
+    h2 {
+      font-size: 17px;
+      font-weight: 800;
+      color: #6ee7b7;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    p {
+      font-size: 14px;
+      color: #cbd5e1;
+      line-height: 1.9;
+    }
+    .english-box {
+      direction: ltr;
+      text-align: left;
+      font-family: system-ui, -apple-system, sans-serif;
+      margin-top: 32px;
+      background: rgba(217, 119, 6, 0.08);
+      border: 1px solid rgba(217, 119, 6, 0.25);
+      border-radius: 16px;
+      padding: 24px;
+    }
+    .english-box h3 {
+      color: #f59e0b;
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+    .english-box p {
+      font-size: 13px;
+      color: #e2e8f0;
+      line-height: 1.6;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 32px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <span class="badge">\u0648\u062B\u064A\u0642\u0629 \u0645\u0639\u062A\u0645\u062F\u0629 \u0648\u0645\u0637\u0627\u0628\u0642\u0629 \u0644\u0645\u062A\u062C\u0631 App Store</span>
+      <h1>\u0633\u064A\u0627\u0633\u0629 \u0627\u0644\u062E\u0635\u0648\u0635\u064A\u0629 \u0644\u062A\u0637\u0628\u064A\u0642 "\u0646\u0648\u0631 \u0627\u0644\u0625\u0633\u0644\u0627\u0645"</h1>
+      <p class="subtitle">\u062A\u0627\u0631\u064A\u062E \u0622\u062E\u0631 \u062A\u062D\u062F\u064A\u062B: 2026</p>
+    </div>
+
+    <div class="section">
+      <h2>\u0645\u0642\u062F\u0645\u0629</h2>
+      <p>\u0646\u064F\u0648\u0644\u064A \u0641\u064A \u062A\u0637\u0628\u064A\u0642 <strong>"\u0646\u0648\u0631 \u0627\u0644\u0625\u0633\u0644\u0627\u0645"</strong> \u0627\u0647\u062A\u0645\u0627\u0645\u0627\u064B \u0628\u0627\u0644\u063A\u0627\u064B \u0628\u062E\u0635\u0648\u0635\u064A\u0629 \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645\u064A\u0646. \u062A\u0648\u0636\u062D \u0647\u0630\u0647 \u0627\u0644\u0633\u064A\u0627\u0633\u0629 \u0643\u064A\u0641 \u0646\u062A\u0639\u0627\u0645\u0644 \u0645\u0639 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0648\u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0639\u0646\u062F \u0627\u0633\u062A\u062E\u062F\u0627\u0645\u0643 \u0644\u062A\u0637\u0628\u064A\u0642\u0646\u0627 \u0639\u0644\u0649 \u0643\u0627\u0641\u0629 \u0627\u0644\u0623\u062C\u0647\u0632\u0629 \u0627\u0644\u0630\u0643\u064A\u0629 \u0648\u0623\u0646\u0638\u0645\u0629 iOS \u0648 iPadOS.</p>
+    </div>
+
+    <div class="section">
+      <h2>\u062C\u0645\u0639 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A</h2>
+      <p>\u0644\u0627 \u064A\u0637\u0644\u0628 \u0627\u0644\u062A\u0637\u0628\u064A\u0642 \u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628 \u0644\u062A\u0634\u063A\u064A\u0644 \u0627\u0644\u0642\u0631\u0622\u0646 \u0648\u0627\u0644\u0623\u0630\u0643\u0627\u0631 \u0648\u0645\u0648\u0627\u0642\u064A\u062A \u0627\u0644\u0635\u0644\u0627\u0629 \u0648\u0627\u0644\u0642\u0628\u0644\u0629\u060C \u0648\u0644\u0627 \u0646\u0637\u0644\u0628 \u0627\u0644\u0627\u0633\u0645 \u0623\u0648 \u0631\u0642\u0645 \u0627\u0644\u0647\u0627\u062A\u0641 \u0623\u0648 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A. \u0639\u0646\u062F \u0627\u0633\u062A\u062E\u062F\u0627\u0645 \u0645\u0633\u062A\u0634\u0627\u0631 \u0646\u0648\u0631 \u0627\u0644\u0625\u0633\u0644\u0627\u0645\u060C \u064A\u064F\u0631\u0633\u0644 \u0646\u0635 \u0627\u0644\u0633\u0624\u0627\u0644 \u0625\u0644\u0649 \u062E\u0627\u062F\u0645 \u0627\u0644\u062A\u0637\u0628\u064A\u0642 \u062B\u0645 \u0625\u0644\u0649 \u0645\u0632\u0648\u062F \u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0644\u0645\u0639\u0627\u0644\u062C\u0629 \u0627\u0644\u0631\u062F\u061B \u0644\u0630\u0644\u0643 \u0644\u0627 \u062A\u0643\u062A\u0628 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0634\u062E\u0635\u064A\u0629 \u0623\u0648 \u0633\u0631\u064A\u0629 \u062F\u0627\u062E\u0644 \u0627\u0644\u0633\u0624\u0627\u0644.</p>
+    </div>
+
+    <div class="section">
+      <h2>\u0623\u0630\u0648\u0646\u0627\u062A \u0627\u0644\u062C\u0647\u0627\u0632 \u0648\u0627\u0644\u0645\u0639\u0627\u0644\u062C\u0629 \u0627\u0644\u0645\u062D\u0644\u064A\u0629</h2>
+      <p>\u0642\u062F \u064A\u062A\u0637\u0644\u0628 \u0627\u0644\u062A\u0637\u0628\u064A\u0642 \u0625\u0630\u0646 \u0627\u0644\u0625\u0634\u0639\u0627\u0631\u0627\u062A \u0644\u062A\u0646\u0628\u064A\u0647\u0627\u062A \u0627\u0644\u0635\u0644\u0627\u0629 \u0648\u0627\u0644\u0623\u0630\u0627\u0646\u060C \u0648\u0625\u0630\u0646 \u0627\u0644\u0645\u0648\u0642\u0639 \u0644\u062A\u062D\u062F\u064A\u062F \u0645\u0648\u0627\u0642\u064A\u062A \u0627\u0644\u0635\u0644\u0627\u0629 \u0648\u0627\u062A\u062C\u0627\u0647 \u0627\u0644\u0642\u0628\u0644\u0629. \u064A\u064F\u0633\u062A\u062E\u062F\u0645 \u0627\u0644\u0645\u0648\u0642\u0639 \u062F\u0627\u062E\u0644 \u0645\u064A\u0632\u0627\u062A \u0627\u0644\u062A\u0637\u0628\u064A\u0642 \u0648\u0644\u0627 \u0646\u0628\u064A\u0639\u0647 \u0623\u0648 \u0646\u0633\u062A\u062E\u062F\u0645\u0647 \u0644\u0644\u0625\u0639\u0644\u0627\u0646\u0627\u062A. \u0623\u0645\u0627 \u0623\u0633\u0626\u0644\u0629 \u0627\u0644\u0645\u0633\u062A\u0634\u0627\u0631 \u0641\u062A\u0639\u0627\u0644\u062C \u0639\u0628\u0631 \u062E\u0627\u062F\u0645 \u0627\u0644\u062A\u0637\u0628\u064A\u0642 \u0648\u0645\u0632\u0648\u062F \u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0643\u0645\u0627 \u0647\u0648 \u0645\u0648\u0636\u062D \u0623\u0639\u0644\u0627\u0647.</p>
+    </div>
+
+    <div class="section">
+      <h2>\u062E\u062F\u0645\u0627\u062A \u0627\u0644\u0623\u0637\u0631\u0627\u0641 \u0627\u0644\u062B\u0627\u0644\u062B\u0629</h2>
+      <p>\u0644\u0627 \u0646\u0633\u062A\u062E\u062F\u0645 \u0634\u0628\u0643\u0627\u062A \u0625\u0639\u0644\u0627\u0646\u064A\u0629 \u0648\u0644\u0627 \u0646\u0628\u064A\u0639 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645\u064A\u0646. \u064A\u0639\u062A\u0645\u062F \u0627\u0644\u0645\u0633\u062A\u0634\u0627\u0631 \u0639\u0644\u0649 \u0645\u0632\u0648\u062F \u0630\u0643\u0627\u0621 \u0627\u0635\u0637\u0646\u0627\u0639\u064A \u062E\u0627\u0631\u062C\u064A \u0644\u0645\u0639\u0627\u0644\u062C\u0629 \u0627\u0644\u0633\u0624\u0627\u0644 \u0627\u0644\u0630\u064A \u064A\u0643\u062A\u0628\u0647 \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645\u060C \u0648\u0644\u0627 \u064A\u0646\u0628\u063A\u064A \u0625\u0631\u0633\u0627\u0644 \u0628\u064A\u0627\u0646\u0627\u062A \u0634\u062E\u0635\u064A\u0629 \u0623\u0648 \u062D\u0633\u0627\u0633\u0629 \u0625\u0644\u064A\u0647.</p>
+    </div>
+
+    <div class="section">
+      <h2>\u0627\u0644\u062A\u0639\u062F\u064A\u0644\u0627\u062A \u0639\u0644\u0649 \u0627\u0644\u0633\u064A\u0627\u0633\u0629</h2>
+      <p>\u0642\u062F \u0646\u0642\u0648\u0645 \u0628\u062A\u062D\u062F\u064A\u062B \u0633\u064A\u0627\u0633\u0629 \u0627\u0644\u062E\u0635\u0648\u0635\u064A\u0629 \u0645\u0646 \u0648\u0642\u062A \u0644\u0622\u062E\u0631 \u0644\u0645\u0648\u0627\u0643\u0628\u0629 \u0627\u0644\u062A\u062D\u062F\u064A\u062B\u0627\u062A \u0627\u0644\u062A\u0642\u0646\u064A\u0629\u060C \u0648\u0633\u064A\u062A\u0645 \u0646\u0634\u0631 \u0623\u064A \u062A\u063A\u064A\u064A\u0631\u0627\u062A \u062F\u0627\u062E\u0644 \u0647\u0630\u0647 \u0627\u0644\u0635\u0641\u062D\u0629 \u0648\u0645\u0628\u0627\u0634\u0631\u0629 \u0639\u0628\u0631 \u0627\u0644\u062A\u0637\u0628\u064A\u0642.</p>
+    </div>
+
+    <div class="section">
+      <h2>\u0627\u0644\u062A\u0648\u0627\u0635\u0644 \u0645\u0639\u0646\u0627</h2>
+      <p>\u0625\u0630\u0627 \u0643\u0627\u0646\u062A \u0644\u062F\u064A\u0643 \u0623\u064A \u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A \u0623\u0648 \u0645\u0644\u0627\u062D\u0638\u0627\u062A \u062D\u0648\u0644 \u0633\u064A\u0627\u0633\u0629 \u0627\u0644\u062E\u0635\u0648\u0635\u064A\u0629\u060C \u064A\u0633\u0639\u062F\u0646\u0627 \u062A\u0648\u0627\u0635\u0644\u0643 \u0645\u0639 \u0645\u0637\u0648\u0631 \u0627\u0644\u062A\u0637\u0628\u064A\u0642 \u0645\u0628\u0627\u0634\u0631\u0629.</p>
+    </div>
+
+    <div class="english-box">
+      <h3>App Store Review Compliance Note (English)</h3>
+      <p><strong>App Name:</strong> Noor Al-Islam (\u0646\u0648\u0631 \u0627\u0644\u0625\u0633\u0644\u0627\u0645)<br>
+      <strong>Data Collection:</strong> The app does not require an account and does not sell personal data. Prayer times, local notifications, Quran reading and tasbih operate on-device. Questions entered into the optional Islamic assistant are sent to the app backend and an AI provider to generate a response. Users are instructed not to submit sensitive personal information.</p>
+    </div>
+
+    <div class="footer">
+      <p>\u062A\u0637\u0628\u064A\u0642 \u0646\u0648\u0631 \u0627\u0644\u0625\u0633\u0644\u0627\u0645 - \u0635\u062F\u0642\u0629 \u062C\u0627\u0631\u064A\u0629 \u0639\u0646 \u0644\u0624\u064A \u0628\u0646 \u062D\u0633\u064A\u0646 \u0648\u0648\u0627\u0644\u062F\u0647 \u0631\u062D\u0645\u0647 \u0627\u0644\u0644\u0647</p>
+      <p>\xA9 2026 \u062C\u0645\u064A\u0639 \u0627\u0644\u062D\u0642\u0648\u0642 \u0645\u062D\u0641\u0648\u0638\u0629</p>
+    </div>
+  </div>
+</body>
+</html>`;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(html);
+});
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await (0, import_vite.createServer)({
+      server: { middlewareMode: true },
+      appType: "spa"
+    });
+    app.use(vite.middlewares);
+    app.get("*", async (req, res, next) => {
+      if (req.originalUrl.startsWith("/api")) {
+        return next();
+      }
+      try {
+        const url = req.originalUrl;
+        let template = await import_fs.default.promises.readFile(import_path.default.resolve(process.cwd(), "index.html"), "utf-8");
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ "Content-Type": "text/html" }).end(template);
+      } catch (e) {
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
+  } else {
+    const distPath = import_path.default.join(process.cwd(), "dist");
+    app.use(import_express.default.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(import_path.default.join(distPath, "index.html"));
+    });
+  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+startServer();
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+//# sourceMappingURL=server.cjs.map
